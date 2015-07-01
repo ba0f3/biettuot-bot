@@ -9,6 +9,8 @@ from cgi import encodeUrl
 import strutils
 import math
 import os
+import parsecfg
+import streams
 
 const
 
@@ -21,7 +23,34 @@ const
   
 var
   lastUpdateId: BiggestInt = 0
+  TELEGRAM_TOKEN: string
+  WOLFRAM_TOKEN: string
 
+  
+proc loadConfig(path: string) =
+  let f = newFileStream(path, fmRead)
+  if f.isNil:
+    echo "Cannot open: " & path
+    quit(1)
+  else:
+    var p: CfgParser
+    p.open(f, path)
+    while true:
+      let e = p.next(0
+      case e.kind
+      of cfgEof:
+        break
+      of cfgKeyValuePair:
+        if e.key == "telegramToken":
+          TELEGRAM_TOKEN = e.value
+        elif e.key == "wolframToken":
+          WOLFRAM_TOKEN = e.value
+        else:
+          discard
+      else:
+        discard
+    p.close()
+  
 randomize()
 proc mktemp(len: int = 6): string =
   var charset {.global.} = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
