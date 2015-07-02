@@ -11,21 +11,12 @@ import math
 import os
 import parsecfg
 import streams
+import telebot
 
-const
-
-  TELEGRAM_BASE_URL = "https://api.telegram.org/bot" & TELEGRAM_TOKEN
-  SEND_MESSAGE_URL = TELEGRAM_BASE_URL &  "/sendMessage"
-  SEND_PHOTO_URL = TELEGRAM_BASE_URL & "/sendPhoto"
-  GET_UPDATE_URL = TELEGRAM_BASE_URL &  "/getUpdates"
-  
-  WOLFRAM_URL = "http://api.wolframalpha.com/v2/query?appid=" & WOLFRAM_TOKEN & "&format=plaintext&input="
-  
 var
-  lastUpdateId: BiggestInt = 0
   TELEGRAM_TOKEN: string
   WOLFRAM_TOKEN: string
-
+  WOLFRAM_URL = "http://api.wolframalpha.com/v2/query?appid=$#&format=plaintext&input=$#"
   
 proc loadConfig(path: string) =
   let f = newFileStream(path, fmRead)
@@ -36,7 +27,7 @@ proc loadConfig(path: string) =
     var p: CfgParser
     p.open(f, path)
     while true:
-      let e = p.next(0
+      let e = p.next()
       case e.kind
       of cfgEof:
         break
@@ -45,11 +36,15 @@ proc loadConfig(path: string) =
           TELEGRAM_TOKEN = e.value
         elif e.key == "wolframToken":
           WOLFRAM_TOKEN = e.value
-        else:
-          discard
       else:
         discard
     p.close()
+
+if "biettuot.local.cfg".fileExists:
+  loadConfig("biettuot.local.cfg")
+else:
+  loadConfig("biettuot.cfg")
+
   
 randomize()
 proc mktemp(len: int = 6): string =
@@ -64,15 +59,8 @@ proc mktemp(len: int = 6): string =
       break
 
   
-proc sendMessage(chatId: BiggestInt, text: string) {.inline.} =
-  var data = newMultipartData()
-  data["chat_id"] = $chatId
-  data["text"] = text
-  
-  echo postContent(SEND_MESSAGE_URL, multipart=data)
-
-proc search(chatId: BiggestInt, input: string) {.async.} =
-  let url = WOLFRAM_URL & encodeUrl(input)
+proc search(b: TeleBot, chatId: int, input: string) {.async.} =
+  let url = WOLFRAM_URL % [WOLFRAM_TOKEN, encodeUrl(input)]
   echo url
   var client = newAsyncHttpClient()  
   var resp = await client.get(url)
@@ -86,9 +74,9 @@ proc search(chatId: BiggestInt, input: string) {.async.} =
         answer &= r.innerText() & "\n"
     else:
       answer = "Thật ngại quá đi 😜"
-    sendMessage(chatId, answer)
+    discard await b.sendMessage(chatId, answer)
 
-proc findButts(chatId: BiggestInt) {.async.} =
+proc findButts(b: TeleBot, chatId: int) {.async.} =
   var client = newAsyncHttpClient()
   let resp = await client.get("http://api.obutts.ru/noise/1")
 
@@ -99,13 +87,10 @@ proc findButts(chatId: BiggestInt) {.async.} =
       let tmp = mktemp() & ".jpg"
       downloadFile(url, tmp)
       echo url, " ", tmp
-      var data = newMultipartData({"chat_id": $chatId})
-      data.addFiles({"photo": tmp})
-
-      echo postContent(SEND_PHOTO_URL, multipart=data)
+      discard await b.sendPhoto(chatId, tmp)
       tmp.removeFile
 
-proc findBoobs(chatId: BiggestInt) {.async.} =
+proc findBoobs(b: TeleBot, chatId: int) {.async.} =
   var client = newAsyncHttpClient()
   let resp = await client.get("http://api.oboobs.ru/noise/1")
 
@@ -116,54 +101,30 @@ proc findBoobs(chatId: BiggestInt) {.async.} =
       let tmp = mktemp() & ".jpg"
       downloadFile(url, tmp)
       echo url, " ", tmp
-      var data = newMultipartData({"chat_id": $chatId})
-      data.addFiles({"photo": tmp})
-
-      echo postContent(SEND_PHOTO_URL, multipart=data)
+      discard await b.sendPhoto(chatId, tmp)
       tmp.removeFile  
     
-proc getUpdates() {.async.} =
-  #while true:
-  echo "update"
-  try:
-    let client = newAsyncHttpClient()
-    var resp = await client.get(GET_UPDATE_URL & "?offset=" & $(lastUpdateId+1))
-    echo resp.status, resp.body
-    if resp.status[0..2] == "200":      
-      let response = parseJson(resp.body)
-      if response["ok"].bval:
-        for update in response["result"]:
-          echo update["update_id"], " ", lastUpdateId
-          if update["update_id"].num > lastUpdateId:
-            lastUpdateId = update["update_id"].num
-            let message = update["message"]
-            let chatId = message["chat"]["id"].num
-            echo message
-            if not message["text"].isNil:
-              let query = message["text"].str
-              if query.startsWith("!butts"):
-                discard findButts(chatId)
-              elif query.startsWith("!boobs"):
-                discard findBoobs(chatId)
-              elif query[0] == '!':
-                discard search(chatId, query[1..query.len-1])
-              else:
-                discard
-                
-    client.close()
-  except OverflowError:
-    echo("overflow!")
-  except ValueError:
-    echo("could not convert string to integer")
-  except IOError:
-    echo("IO error!")
-  except:
-    echo "Unknown exception!"
-  finally:
-    discard getUpdates()
-  
+proc main() {.async.} =
+  var bot = newTeleBot(TELEGRAM_TOKEN)
+  var updates: seq[Update]
+  while true:
+    updates = await bot.getUpdates()
 
-when isMainModule:
-  
-  asyncCheck getUpdates()
-  runForever()
+    for update in updates:
+      if update.message.kind == kText:
+        let query = update.message.text
+        let chatId = update.message.chat.id()
+        if query.startsWith("!butts"):
+          discard bot.sendChatAction(chatId, "upload_photo")
+          discard bot.findButts(chatId)
+        elif query.startsWith("!boobs"):
+          discard bot.sendChatAction(chatId, "upload_photo")
+          discard bot.findBoobs(chatId)
+        elif query[0] == '!':
+          discard bot.sendChatAction(chatId, "typing")          
+          discard bot.search(chatId, query[1..query.len-1])
+        else:
+          discard
+
+asyncCheck main()
+runForever()
