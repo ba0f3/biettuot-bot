@@ -7,7 +7,6 @@ import json
 import q
 from cgi import encodeUrl
 import strutils
-import math
 import os
 import parsecfg
 import streams
@@ -45,20 +44,6 @@ if "biettuot.local.cfg".fileExists:
 else:
   loadConfig("biettuot.cfg")
 
-  
-randomize()
-proc mktemp(len: int = 6): string =
-  var charset {.global.} = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-  var filename = newString(len)
-  while true:
-    for i in 0..len-1:
-      filename[i] = charset[random(charset.len-1)]
-    result = getTempDir() & filename
-    if not result.existsFile:
-      break
-
-  
 proc search(b: TeleBot, chatId: int, input: string) {.async.} =
   let url = WOLFRAM_URL % [WOLFRAM_TOKEN, encodeUrl(input)]
   echo url
@@ -84,11 +69,7 @@ proc findButts(b: TeleBot, chatId: int) {.async.} =
     let response = parseJson(resp.body)
     if len(response) > 0:
       let url = "http://media.obutts.ru/" & response[0]["preview"].str
-      let tmp = mktemp() & ".jpg"
-      downloadFile(url, tmp)
-      echo url, " ", tmp
-      discard await b.sendPhoto(chatId, tmp)
-      tmp.removeFile
+      discard await b.sendPhoto(chatId, url)
 
 proc findBoobs(b: TeleBot, chatId: int) {.async.} =
   var client = newAsyncHttpClient()
@@ -98,11 +79,7 @@ proc findBoobs(b: TeleBot, chatId: int) {.async.} =
     let response = parseJson(resp.body)
     if len(response) > 0:
       let url = "http://media.oboobs.ru/" & response[0]["preview"].str
-      let tmp = mktemp() & ".jpg"
-      downloadFile(url, tmp)
-      echo url, " ", tmp
-      discard await b.sendPhoto(chatId, tmp)
-      tmp.removeFile  
+      discard await b.sendPhoto(chatId, url)
     
 proc main() {.async.} =
   var bot = newTeleBot(TELEGRAM_TOKEN)
